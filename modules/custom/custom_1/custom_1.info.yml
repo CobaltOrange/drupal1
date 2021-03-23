@@ -1,0 +1,6 @@
+name: Custom 1
+type: module
+description: 'Lorem ipsum generator for Drupal'
+package: Development
+core: 8.x
+configure: custom_1.form

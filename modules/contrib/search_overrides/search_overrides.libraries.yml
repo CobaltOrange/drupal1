@@ -1,0 +1,5 @@
+drupal.search_overrides.admin:
+  version: 1.x
+  css:
+    component:
+      css/search_overrides.admin.css: {}

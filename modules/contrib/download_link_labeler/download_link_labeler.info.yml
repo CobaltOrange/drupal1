@@ -1,0 +1,11 @@
+name: Download Link Labeler
+description: Content filter to label links to downloadable files with file type and file size information.
+type: module
+package: filters
+core: 8.x
+core_version_requirement: ^8 || ^9
+
+# Information added by Drupal.org packaging script on 2020-05-02
+version: '8.x-1.0-beta7'
+project: 'download_link_labeler'
+datestamp: 1588449630

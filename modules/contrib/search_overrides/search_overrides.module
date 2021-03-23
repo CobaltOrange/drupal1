@@ -1,0 +1,305 @@
+<?php
+
+/**
+ * @file
+ * Contains hooks for Search Overrides Module.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\search_api\Entity\Index;
+use Drupal\search_api\Query\QueryInterface;
+use Drupal\search_api_solr\Utility\Utility as SearchApiSolrUtility;
+use Drupal\search_overrides\SearchOverrideReferencer;
+use Drupal\search_overrides\Controller\Manager;
+use Solarium\Core\Query\QueryInterface as SolariumQueryInterface;
+use Drupal\Component\Utility\Random;
+use Drupal\Core\Url;
+
+/**
+ * Lets modules alter the Solarium select query before executing it.
+ *
+ * @param \Solarium\Core\Query\QueryInterface $solarium_query
+ *   The Solarium query object, as generated from the Search API query.
+ * @param \Drupal\search_api\Query\QueryInterface $query
+ *   The Search API query object representing the executed search query.
+ */
+function search_overrides_search_api_solr_query_alter(SolariumQueryInterface $solarium_query, QueryInterface $query) {
+  // Allow a method to review unmodified results.
+  $ignore = \Drupal::request()->query->get('ignore_overrides');
+  if (!empty($ignore)) {
+    // Show unmodified results.
+    return;
+  }
+
+  // Get search terms.
+  $query_keys = $query->getKeys();
+  // Exit if no query was performed.
+  if (!$query_keys) {
+    return;
+  }
+
+  $conjunction = $query->getParseMode()->getConjunction();
+  if (is_array($query_keys)) {
+    unset($query_keys['#conjunction']);
+  }
+  else {
+    $query_keys = explode(' ', $query->getKeys());
+  }
+
+  // Should we only match the entire search string?
+  $config = \Drupal::config('search_overrides.settings');
+  $match_entire_string = $config->get('match_entire_string');
+
+  // add a search for a phrase match if more than one term
+  if (count($query_keys) > 1 && ($conjunction == 'AND')) {
+    // Check if we should match only entire string or
+    // entire string + each term individually
+    if ($match_entire_string) {
+      $query_keys = [implode(' ', $query_keys)];
+    }
+    else {
+      // Add full query to the individual terms.
+      array_unshift($query_keys, implode(' ', $query_keys));
+    }
+  }
+
+  // Try to find an override for this query. We don't use these results to
+  // retrieve the overrides because they wouldn't be ordered.
+  $elQuery = \Drupal::entityQuery('search_override');
+  $elevates = $elQuery->condition('query', $query_keys, 'IN')->execute();
+  if (!$elevates) {
+    // No record for this search query, so nothing to do.
+    return;
+  }
+
+  // Initialize variables.
+  $elSolrIds = [];
+  $exSolrIds = [];
+  $index = $query->getIndex();
+  $current_lang = \Drupal::languageManager()->getCurrentLanguage()->getId();
+  $elStorage = \Drupal::entityTypeManager()->getStorage('search_override');
+
+  // Loop through search terms.
+  foreach ($query_keys as $key) {
+    $elQuery = \Drupal::entityQuery('search_override');
+    $elevates = $elQuery->condition('query', $key)->execute();
+    if (!$elevates) {
+      // No record for this search term, so nothing to do.
+      continue;
+    }
+    // Only load one entity per term, to reduce complexity
+    // TODO: prevent duplicates from being stored.
+    $elevate = $elStorage->load(array_shift($elevates));
+
+    // Handle items to elevate.
+    $elevateIds = $elevate->getElevatedIds();
+    foreach ($elevateIds as $id) {
+      // TODO: make this work with more entities than nodes.
+      $elSolrIds[] = search_overrides_make_solr_id($index, $id, $current_lang);
+      //$hash . '-base-entity:node/' . $id . ':' . $language;
+    }
+
+    // Handle exclusions.
+    $excludeIds = $elevate->getExcludedIds();
+    foreach ($excludeIds as $id) {
+      // TODO: make this work with more entities than nodes.
+      $exSolrIds[] = search_overrides_make_solr_id($index, $id, $current_lang);
+    }
+  }
+
+  $solarium_query->addParam('elevateIds', implode(',', $elSolrIds));
+  $solarium_query->addParam('excludeIds', implode(',', $exSolrIds));
+}
+
+/**
+ * Construct the Solr id from the provided data.
+ */
+function search_overrides_make_solr_id(Index $index, $id, $current_lang) {
+  if (strpos($id, '-') !== FALSE) {
+    // Assume to be an external Solr id, so return without modification.
+    return $id;
+  }
+  $index_id = $index->id();
+  $backend = $index->getServerInstance()->getBackend();
+  if (method_exists($backend, 'getTargetedSiteHash')) {
+    $site_hash = $backend->getTargetedSiteHash($index);
+  } else {
+    $site_hash = SearchApiSolrUtility::getSiteHash();
+  }
+
+  if (is_numeric($id)) {
+    // Assume to be a node id.
+    $eid = "node/$id";
+  }
+  else {
+    // Should already include the entity type id.
+    $eid = $id;
+  }
+  $item_id = "entity:$eid:$current_lang";
+  // I'd prefer to call SearchApiSolrBackend::createId() but it's protected.
+  return "$site_hash-$index_id-$item_id";
+}
+
+/**
+ * Provide additional operations on the Search overrides listing page.
+ */
+function search_overrides_entity_operation($entity) {
+  $operations = [];
+  $info = $entity->getEntityType();
+  if ($info->id() == 'search_override') {
+    $config = \Drupal::config('search_overrides.settings');
+    $path = $config->get('path');
+    $parameter = $config->get('parameter');
+    if (empty($config) || empty($path) || empty($parameter)) {
+      // The required configuration has not been provided, so throw a warning
+      // and skip adding operations.
+      $messenger = \Drupal::messenger();
+      $messenger->addMessage('Settings for Search Overrides are incomplete. Configure them to add links here to test results.', $messenger::TYPE_WARNING, $repeat = TRUE);
+      return;
+    }
+
+    // Provide a link to view the modified results.
+    $random = new Random();
+    $operations['test-result'] = [
+      'title' => t('Test Override'),
+      'weight' => 50,
+      'url' => Url::fromUri('internal:' . $path, [
+        'query' => [
+          $parameter => $entity->getQuery(),
+          'search_overrides' => $random->name(),
+        ],
+      ]),
+    ];
+    // Provide a link to view the unmodified results.
+    $operations['original-result'] = [
+      'title' => t('Original Results'),
+      'weight' => 60,
+      'url' => Url::fromUri('internal:' . $path, [
+        'query' => [
+          $parameter => $entity->getQuery(),
+          'ignore_overrides' => 1,
+        ],
+      ]),
+    ];
+  }
+
+  return $operations;
+}
+
+/**
+ * Implements hook_entity_delete().
+ */
+function search_overrides_entity_delete($entity) {
+  $eid = $entity->id();
+  $entity_type = $entity->getEntityTypeId();
+  $overrides = [];
+  // Use our existing Referencer class to retrieve any overrides for the entity.
+  $referencer = new SearchOverrideReferencer;
+  $override_types = ['elnid', 'exnid'];
+  // Retrieve any existing overrides.
+  foreach ($override_types as $override_type) {
+    $overrides_by_type = $referencer->findOverridesByEntity($eid, $entity_type, ['which' => $override_type]);
+    if ($overrides_by_type) {
+      $overrides[$override_type] = $overrides_by_type;
+    }
+  }
+
+  if(!$overrides) {
+    // No overrides for the entity being deleted, so exit.
+    return;
+  }
+  $overridesManager = new Manager;
+  $elStorage = \Drupal::entityTypeManager()->getStorage('search_override');
+
+  // Delete the overrides that were found, using an existing method.
+  foreach($overrides as $field => $entity_overrides) {
+    foreach ($entity_overrides as $override_id) {
+      $override = $elStorage->load($override_id);
+      $overridesManager->processRemoval($override, $eid, $field);
+    }
+  }
+}
+
+/**
+ * Implements hook_entity_extra_field_info().
+ */
+function search_overrides_entity_extra_field_info() {
+  $extra = [];
+
+  if (\Drupal::service('module_handler')->moduleExists('node')) {
+    $node_types = \Drupal::entityTypeManager()
+      ->getStorage('node_type')
+      ->loadMultiple();
+
+    foreach ($node_types as $node_type) {
+      $extra['node'][$node_type->id()]['form']['url_redirects'] = [
+        'label' => t('Search Overrides'),
+        'description' => t('Search Overrides module form elements'),
+        'weight' => 50,
+      ];
+    }
+  }
+
+  return $extra;
+}
+
+/**
+ * Implements hook_form_node_form_alter().
+ */
+function search_overrides_form_node_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  /** @var \Drupal\node\NodeInterface $node */
+
+  $node = $form_state->getFormObject()->getEntity();
+  if (!$node->isNew() && \Drupal::currentUser()->hasPermission('administer search overrides')) {
+
+    $nid = $node->id();
+    $referencer = new SearchOverrideReferencer;
+
+    // Create a table of search overrides for this node.
+    $form['search_overrides'] = [
+      '#type' => 'details',
+      '#title' => t('Search Overrides'),
+      '#group' => 'advanced',
+      '#open' => FALSE,
+      'table' => [
+        $referencer->EntityOverridesTable($nid),
+      ],
+      '#attached' => [
+        'library' => [
+          'search_overrides/drupal.search_overrides.admin',
+          'core/drupal.dropbutton',
+        ],
+      ],
+      'add-form' => [
+        '#type' => 'search_override_element',
+      ],
+    ];
+  }
+}
+
+function search_overrides_get_indexes() {
+  $index_labels = [];
+  if (!function_exists('search_api_solr_get_servers')) {
+    return $index_labels;
+  }
+  foreach (search_api_solr_get_servers() as $server) {
+    try {
+      /** @var \Drupal\search_api_solr\SolrBackendInterface $backend */
+      $backend = $server->getBackend();
+      // $connector = $backend->getSolrConnector();
+      if ($indexes = $server->getIndexes()) {
+        $document_counts[$server->id()] = $backend->getDocumentCounts();
+
+        foreach ($indexes as $index) {
+          $index_labels[$index->id()] = $index->label();
+        }
+
+      }
+    }
+    catch (SearchApiException $e) {
+      watchdog_exception('search_api', $e, '%type while retrieving Solr server @server: @message in %function (line %line of %file).', ['@server' => $server->label()]);
+    }
+  }
+  return $index_labels;
+
+}

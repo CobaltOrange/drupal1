@@ -1,0 +1,21 @@
+
+# Search elevate menu items definition
+search_override.list:
+  title: 'Search overrides'
+  route_name: entity.search_override.collection
+  description: 'Manage Search Overrides'
+  parent: system.admin_config_search
+  menu_name: admin
+  weight: 100
+
+search_override.settings:
+  title: Search override settings
+  description: 'Configure Search override settings'
+  route_name: search_override.settings
+  parent: search_override.list
+
+search_override.add:
+  title: Add search override
+  description: 'Add a Search Override'
+  route_name: entity.search_override.add_form
+  parent: search_override.list

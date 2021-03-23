@@ -1,0 +1,51 @@
+/**
+ * @file
+ * Styles for Search Overrides node form.
+ *
+ */
+.search-overrides--table tr td:nth-child(2) {
+  text-align: right;
+}
+.search-overrides--table th:nth-child(2) {
+  text-align: center;
+  padding-right: 10px;
+  padding-left: 10%;
+}
+.js .search-overrides--table td .dropbutton-multiple {
+  float: right;
+  margin-right: 0;
+}
+.search-override--add-query-form {
+  display: flex;
+  padding: 1em 0;
+  justify-content: space-evenly;
+}
+.search-override--add-query-form .form-type-textfield {
+  max-width: 100%;
+  margin: 0 0.5em;
+}
+.search-override--add-query-form .form-type-select {
+  margin: 0 0.5em;
+}
+.search-override--add-query-form .form-type-select select {
+  padding: 0.3em 1.2em 0.3em 0.5em;
+}
+.search-override--add-query-form .button {
+  max-height: 1.8em;
+  margin: 0 0.5em;
+  padding: 4px 1em;
+}
+.ui-dialog .form-type-entity-autocomplete {
+  max-width: 400px;
+}
+.searchoverride-settings .override-previews .form-item {
+  display: inline-block;
+  max-width: 120px;
+}
+.gin--edit-form .search-override--add-query-form {
+  flex-wrap: wrap;
+}
+.gin--edit-form .search-override--add-query-form .button {
+  margin: 0.75em 0;
+  max-height: none;
+}

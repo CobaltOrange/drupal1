@@ -1,0 +1,20 @@
+name: lando-d8
+recipe: drupal8
+config:
+  webroot: .
+  php: 7.3
+  xdebug: true
+  config:
+    php: ./php.ini
+  composer_version: '2.0.6'
+services:
+  phpmyadmin:
+    type: phpmyadmin
+    hosts:
+      - database
+  solr7:
+    type: 'solr:7'
+    core: lando7
+    portforward: true
+    config:
+      dir: ../lando-d8-solr/solr_7.x_config

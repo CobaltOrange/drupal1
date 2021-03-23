@@ -1,0 +1,31 @@
+search_overrides.override.remove:
+  path: '/admin/config/search/search_override/{override}/remove/{field}/{entity}'
+  options:
+    parameters:
+      override:
+        type: entity:search_override
+  defaults:
+    _controller: '\Drupal\search_overrides\Controller\Manager::removeEntity'
+    _title: 'Remove an Entity from an Override'
+  requirements:
+    _permission: 'administer search overrides'
+
+search_overrides.override.remove.ajax:
+  path: '/admin/config/search/search_override/{override}/remove/{field}/{entity}/ajax'
+  options:
+    parameters:
+      override:
+        type: entity:search_override
+  defaults:
+    _controller: '\Drupal\search_overrides\Controller\Manager::removeEntityAjax'
+    _title: 'Remove an Entity from an Override'
+  requirements:
+    _permission: 'administer search overrides'
+
+search_overrides.autocomplete:
+  path: '/search_overrides/autcomplete/{index_id}/{count}'
+  defaults:
+    _controller: '\Drupal\search_overrides\Controller\Manager::searchIndex'
+    _format: json
+  requirements:
+    _permission: 'administer search overrides'

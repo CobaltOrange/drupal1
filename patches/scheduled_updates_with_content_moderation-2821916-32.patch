@@ -1,0 +1,134 @@
+diff --git a/src/FieldUtilsTrait.php b/src/FieldUtilsTrait.php
+index dac4008..ea76bfc 100644
+--- a/src/FieldUtilsTrait.php
++++ b/src/FieldUtilsTrait.php
+@@ -26,6 +26,25 @@ trait FieldUtilsTrait {
+     return $options;
+   }
+ 
++  /**
++   * Return same like EntityFieldManager::getFieldStorageDefinitions() plus writable computed fields.
++   *
++   * @param $entity_type_id
++   *
++   * @return \Drupal\Core\Field\FieldStorageDefinitionInterface[]
++   */
++    protected function getFieldStorageDefinitions($entity_type_id) {
++      $fields = $this->FieldManager()->getFieldStorageDefinitions($entity_type_id);
++
++      foreach ($this->FieldManager()->getBaseFieldDefinitions($entity_type_id) as $field_name => $definition) {
++        if (!isset($fields[$field_name]) && !$definition->isReadOnly()) {
++          $fields[$field_name] = $definition;
++        }
++      }
++
++      return $fields;
++    }
++
+   /**
+    * Return all fields that can be used as destinations fields.
+    *
+@@ -37,7 +56,7 @@ trait FieldUtilsTrait {
+   protected function getDestinationFields($entity_type_id, FieldConfig $source_field = NULL) {
+     $destination_fields = [];
+ 
+-    $fields = $this->FieldManager()->getFieldStorageDefinitions($entity_type_id);
++    $fields = $this->getFieldStorageDefinitions($entity_type_id);
+     foreach ($fields as $field_id => $field) {
+       if ($this->isDestinationFieldCompatible($field, $source_field)) {
+         $destination_fields[$field_id] = $field;
+@@ -169,7 +188,7 @@ trait FieldUtilsTrait {
+    * @return \Drupal\Core\Field\FieldStorageDefinitionInterface|null
+    */
+   protected function getFieldStorageDefinition($entity_type_id, $field_name) {
+-    $definitions = $this->FieldManager()->getFieldStorageDefinitions($entity_type_id);
++    $definitions = $this->getFieldStorageDefinitions($entity_type_id);
+     if (!isset($definitions[$field_name])) {
+       return NULL;
+     }
+diff --git a/src/Form/ScheduledUpdateTypeBaseForm.php b/src/Form/ScheduledUpdateTypeBaseForm.php
+index afe2860..447b2d4 100644
+--- a/src/Form/ScheduledUpdateTypeBaseForm.php
++++ b/src/Form/ScheduledUpdateTypeBaseForm.php
+@@ -691,6 +691,10 @@ class ScheduledUpdateTypeBaseForm extends EntityForm{
+       'list_integer',
+       'list_string',
+     ];
++
++    if ('string' == $type && $definition->getProvider() == 'content_moderation') {
++      return TRUE;
++    }
+     if (in_array($type, $compatible_types)) {
+       return TRUE;
+     }
+@@ -778,6 +782,23 @@ class ScheduledUpdateTypeBaseForm extends EntityForm{
+       $definition->setDescription('');
+       return \Drupal::service('plugin.manager.field.widget')->getInstance(array('field_definition' => $definition));
+     }
++    elseif ($definition->getType() == 'string' && $definition->getFieldStorageDefinition()->getName() == 'moderation_state'
++      && $definition->getProvider() == 'content_moderation') {
++      $configuration = [
++        'type' => 'moderation_state_default',
++        'settings' => [],
++        'third_party_settings' => [],
++      ];
++      $widget = \Drupal::service('plugin.manager.field.widget')->getInstance([
++        'field_definition' => $definition,
++        'form_mode' => 'add',
++        // No need to prepare, defaults have been merged in setComponent().
++        'prepare' => FALSE,
++        'configuration' => $configuration,
++       ]);
++      return $widget;
++    }
++
+     return NUll;
+   }
+ 
+diff --git a/src/Plugin/BaseUpdateRunner.php b/src/Plugin/BaseUpdateRunner.php
+index 574288e..56bb0c0 100644
+--- a/src/Plugin/BaseUpdateRunner.php
++++ b/src/Plugin/BaseUpdateRunner.php
+@@ -16,6 +16,7 @@ use Drupal\Core\Form\FormStateInterface;
+ use Drupal\Core\Plugin\PluginBase;
+ use Drupal\Core\Render\Element;
+ use Drupal\Core\Session\AccountSwitcherInterface;
++use Drupal\Core\Field\FieldConfigBase;
+ use Drupal\field\Entity\FieldConfig;
+ use Drupal\scheduled_updates\ClassUtilsTrait;
+ use Drupal\scheduled_updates\Entity\ScheduledUpdate;
+@@ -349,6 +350,18 @@ abstract class BaseUpdateRunner extends PluginBase implements UpdateRunnerInterf
+           //  If it is require don't update value because this cause a fatal at least on base fields.
+ 
+           if (isset($new_value)) {
++
++            // @todo: Seems to work with Content Moderation status.
++            // Need to check if it also works with Workbench ??
++            if ($to_field == 'moderation_state' && empty($new_value)) {
++              /** @var FieldConfigBase $field */
++              $field = FieldConfig::loadByName($update->getEntityTypeId(), $update->bundle(), $from_field);
++              $default = $field->getDefaultValue($update);
++
++              if (!empty($default)) {
++                $new_value = $default[0];
++              }
++            }
+             $entity_to_update->set($to_field, $new_value);
+           }
+         }
+diff --git a/src/UpdateUtils.php b/src/UpdateUtils.php
+index e84c46e..5208f17 100644
+--- a/src/UpdateUtils.php
++++ b/src/UpdateUtils.php
+@@ -70,7 +70,10 @@ class UpdateUtils implements UpdateUtilsInterface {
+       // Core doesn't have a standard method for determining if entities of bundle should have new revisions.
+       // This should be updated if an interface is create for this.
+       // @todo Check Entity API has a solution for this and also check it's interface.
+-      if ($this->implementsInterface($bundle_class,['Drupal\node\NodeTypeInterface'])) {
++      if ($type_definition->getProvider() == 'node' && $this->implementsInterface($bundle_class,['Drupal\node\NodeTypeInterface'])) {
++        return TRUE;
++      }
++      if ($type_definition->isRevisionable()) {
+         return TRUE;
+       }
+     }

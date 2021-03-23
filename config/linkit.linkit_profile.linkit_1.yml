@@ -1,0 +1,23 @@
+uuid: 5d60a5d9-6a76-4388-8e69-4ff40cc16a1d
+langcode: en
+status: true
+dependencies:
+  module:
+    - node
+id: linkit_1
+label: 'LinkIt 1'
+description: ''
+attributes: {  }
+matchers:
+  6d7f2087-3bec-4105-b4d7-7a6fa855d278:
+    uuid: 6d7f2087-3bec-4105-b4d7-7a6fa855d278
+    id: 'entity:node'
+    weight: 0
+    settings:
+      result_description: '[node:nid] | [node:langcode] | [node:title] '
+      bundles:
+        article: article
+        page: page
+        recipe: recipe
+      group_by_bundle: true
+      include_unpublished: true

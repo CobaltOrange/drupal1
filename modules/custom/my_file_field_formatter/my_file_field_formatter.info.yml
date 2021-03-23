@@ -1,0 +1,8 @@
+name: my file field formatter
+type: module
+description: 'Provides file field formatter to use media name as link text.'
+package: Other
+core: 8.x
+core_version_requirement: ^8 || ^9
+version: '1.0'
+project: 'custom'

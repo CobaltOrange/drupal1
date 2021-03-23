@@ -1,0 +1,38 @@
+uuid: 984380a7-d223-4e7b-ae49-594632c40f79
+langcode: en
+status: true
+dependencies:
+  config:
+    - block_content.type.block_hyperlink_test_1
+    - field.field.block_content.block_hyperlink_test_1.body
+    - field.field.block_content.block_hyperlink_test_1.field_block_link
+  module:
+    - link
+    - text
+id: block_content.block_hyperlink_test_1.default
+targetEntityType: block_content
+bundle: block_hyperlink_test_1
+mode: default
+content:
+  body:
+    label: hidden
+    type: text_default
+    weight: 0
+    settings: {  }
+    third_party_settings: {  }
+    region: content
+  field_block_link:
+    weight: 1
+    label: above
+    settings:
+      trim_length: 80
+      url_only: false
+      url_plain: false
+      rel: ''
+      target: ''
+    third_party_settings: {  }
+    type: link
+    region: content
+hidden:
+  langcode: true
+  search_api_excerpt: true
